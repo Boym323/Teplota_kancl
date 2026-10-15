@@ -57,7 +57,9 @@ bool readSensor(float &temperature, float &humidity) {
   temperature = temperatureEvent.temperature;
   humidity = humidityEvent.relative_humidity;
 
-  if (!isfinite(temperature) || !isfinite(humidity)) {
+  if (!isfinite(temperature) || !isfinite(humidity) ||
+      temperature < -40.0f || temperature > 125.0f ||
+      humidity < 0.0f || humidity > 100.0f) {
     Serial.println(F("Invalid SHT4x values"));
     return false;
   }
