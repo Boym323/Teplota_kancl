@@ -1,6 +1,7 @@
-// ESP8266 + SHT4x telemetry for TMEP.cz.
-// The device takes one reading per boot and ALWAYS returns to deep sleep.
-// For timed wakeup, the hardware normally needs GPIO16 connected to RST.
+// Měření teploty a vlhkosti pomocí ESP8266 a čidla SHT4x.
+// Při každém probuzení provedeme JEDNO měření, odešleme je do TMEP.cz
+// a vždy přejdeme do hlubokého spánku, i když čidlo nebo síť selže.
+// POZOR: Pro probuzení z deep sleep musí být zpravidla GPIO16 (D0) spojeno s RST.
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -10,7 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 
-// Keep local Wi-Fi passwords in Teplota_kancl_local.h, not in Git.
+#include "wifi_rtc_cache.h"
+
+// Soukromá konfigurace patří do ignorovaného Teplota_kancl_local.h.
+// Bez něj použijeme původní veřejné hodnoty z ukázkové konfigurace.
 #if __has_include("Teplota_kancl_local.h")
 #include "Teplota_kancl_local.h"
 #else
@@ -20,24 +24,47 @@
 namespace {
 
 constexpr uint32_t kWifiTimeoutMs = 15000;
+constexpr uint32_t kFastWifiTimeoutMs = 2500; // Poté zkusíme klasické vyhledání AP.
 constexpr uint32_t kHttpTimeoutMs = 5000;
 constexpr uint16_t kTmepPort = 80;
 constexpr size_t kHostCapacity = 64;
 constexpr size_t kRequestCapacity = 192;
 constexpr size_t kStatusCapacity = 64;
 
+// 32 * 4 = 128 B: nezasahujeme do první části RTC RAM používané OTA bootloaderem.
+// V RTC uživatelské paměti je celkem 512 B a offset je v 4B slovech.
+constexpr uint32_t kRtcCacheOffsetWords = 32;
+
+static_assert(TMEP_SLEEP_SECONDS > 0, "Deep sleep must be at least 1 second");
+static_assert(TMEP_FAST_WIFI == 0 || TMEP_FAST_WIFI == 1, "TMEP_FAST_WIFI must be 0 or 1");
+static_assert(TMEP_FAST_SLEEP == 0 || TMEP_FAST_SLEEP == 1, "TMEP_FAST_SLEEP must be 0 or 1");
+
 Adafruit_SHT4x sht4;
 
+// Jedno místo pro uspání: žádná chybová větev nesmí vynechat deep sleep.
 void sleepUntilNextReading() {
   Serial.print(F("Deep sleep (seconds): "));
   Serial.println(TMEP_SLEEP_SECONDS);
-  Serial.flush();
+  Serial.flush(); // Neztratit poslední diagnostickou zprávu.
 
-  // Use 64-bit multiplication to avoid overflow for larger valid intervals.
-  ESP.deepSleep(static_cast<uint64_t>(TMEP_SLEEP_SECONDS) * 1000000ULL);
-  delay(100); // Allow the ESP8266 to enter deep sleep.
+  uint64_t sleepUs = static_cast<uint64_t>(TMEP_SLEEP_SECONDS) * 1000000ULL;
+  const uint64_t maxSleepUs = ESP.deepSleepMax();
+  if (maxSleepUs > 0 && sleepUs > maxSleepUs) {
+    // RTC časovač neumí neomezeně dlouhý interval.
+    sleepUs = maxSleepUs;
+  }
+
+#if TMEP_FAST_SLEEP
+  // Po ukončení HTTP přenosu nečekáme na běžné vypínání Wi-Fi rádia.
+  // Významné pro zařízení napájené baterií; ověřit na konkrétní desce.
+  ESP.deepSleepInstant(sleepUs, WAKE_RF_DEFAULT);
+#else
+  ESP.deepSleep(sleepUs, WAKE_RF_DEFAULT);
+#endif
+  delay(100); // Pojistka pro nečekaný návrat z volání uspání.
 }
 
+// Čidlo načteme ještě před zapnutím Wi-Fi: při chybě šetříme napájení.
 bool readSensor(float &temperature, float &humidity) {
   if (!sht4.begin()) {
     Serial.println(F("SHT4x not found"));
@@ -57,6 +84,7 @@ bool readSensor(float &temperature, float &humidity) {
   temperature = temperatureEvent.temperature;
   humidity = humidityEvent.relative_humidity;
 
+  // Do TMEP se nesmí odeslat NaN, nekonečno ani údaj mimo rozsah SHT4x.
   if (!isfinite(temperature) || !isfinite(humidity) ||
       temperature < -40.0f || temperature > 125.0f ||
       humidity < 0.0f || humidity > 100.0f) {
@@ -71,21 +99,49 @@ bool readSensor(float &temperature, float &humidity) {
   return true;
 }
 
+// AP určíme kombinací SSID/hesla a případně uloženého kanálu + BSSID.
+void beginWifi(const WifiRtcCache* hint) {
+  const char* password = (WIFI_PASSWORD[0] == '\0') ? nullptr : WIFI_PASSWORD;
+  if (hint != nullptr) {
+    WiFi.begin(WIFI_SSID, password, hint->channel, hint->bssid);
+  } else {
+    WiFi.begin(WIFI_SSID, password);
+  }
+}
+
 bool connectWifi() {
-  // Prevent Wi-Fi settings from being written to flash on every wakeup.
+  // Opakované probuzení nesmí opotřebovávat flash zápisem Wi-Fi konfigurace.
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
 
-  if (WIFI_PASSWORD[0] == '\0') {
-    WiFi.begin(WIFI_SSID);
-  } else {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WifiRtcCache cache = {};
+  bool cachedAp = false;
+#if TMEP_FAST_WIFI
+  // RTC RAM vydrží deep sleep, při výpadku napájení může být neplatná.
+  cachedAp = ESP.rtcUserMemoryRead(
+                 kRtcCacheOffsetWords,
+                 reinterpret_cast<uint32_t*>(&cache), sizeof(cache)) &&
+             wifiCacheValid(cache, WIFI_SSID);
+  if (cachedAp) {
+    Serial.println(F("Wi-Fi: cached AP"));
   }
+#endif
 
+  beginWifi(cachedAp ? &cache : nullptr);
   const uint32_t start = millis();
+
+  // Omezený celkový čas pro připojení včetně případného přepnutí na běžný scan.
   while (WiFi.status() != WL_CONNECTED &&
          static_cast<uint32_t>(millis() - start) < kWifiTimeoutMs) {
-    delay(250); // Yield to the Wi-Fi stack and watchdog.
+    if (cachedAp &&
+        static_cast<uint32_t>(millis() - start) >= kFastWifiTimeoutMs) {
+      // AP mohl změnit kanál či BSSID. Nezůstaneme na starých údajích.
+      Serial.println(F("Wi-Fi: cached AP failed, scanning"));
+      WiFi.disconnect(false);
+      beginWifi(nullptr);
+      cachedAp = false;
+    }
+    delay(50); // Uvolnění CPU pro síťový stack a watchdog.
   }
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -95,9 +151,22 @@ bool connectWifi() {
 
   Serial.print(F("Wi-Fi connected; IP: "));
   Serial.println(WiFi.localIP());
+
+#if TMEP_FAST_WIFI
+  // Nový kanál a BSSID uložíme do RTC RAM pouze po úspěšném připojení.
+  // Nezapisujeme do flash a nikdy zde neukládáme Wi-Fi heslo.
+  const int channel = WiFi.channel();
+  const uint8_t* bssid = WiFi.BSSID();
+  if (bssid != nullptr && channel >= 1 && channel <= 13) {
+    cache = wifiCacheBuild(WIFI_SSID, static_cast<uint8_t>(channel), bssid);
+    ESP.rtcUserMemoryWrite(kRtcCacheOffsetWords,
+                           reinterpret_cast<uint32_t*>(&cache), sizeof(cache));
+  }
+#endif
   return true;
 }
 
+// HTTP používá jen krátké pevné buffery; žádné dynamicky rostoucí String.
 bool sendReading(float temperature, float humidity) {
   char host[kHostCapacity];
   const int hostLength =
@@ -107,7 +176,7 @@ bool sendReading(float temperature, float humidity) {
     return false;
   }
 
-  // dtostrf avoids locale-dependent float formatting and heap-backed String.
+  // dtostrf zformátuje desetinná čísla bez dočasných String objektů.
   char temperatureText[20];
   char humidityText[20];
   dtostrf(temperature, 0, 2, temperatureText);
@@ -128,6 +197,7 @@ bool sendReading(float temperature, float humidity) {
   }
 
   WiFiClient client;
+  // Platí pro DNS, TCP a operace klienta; není to jeden společný deadline.
   client.setTimeout(kHttpTimeoutMs);
   if (!client.connect(host, kTmepPort)) {
     Serial.println(F("TMEP connection failed"));
@@ -135,7 +205,7 @@ bool sendReading(float temperature, float humidity) {
   }
 
   const size_t written = client.write(
-      reinterpret_cast<const uint8_t *>(request),
+      reinterpret_cast<const uint8_t*>(request),
       static_cast<size_t>(requestLength));
   if (written != static_cast<size_t>(requestLength)) {
     Serial.println(F("Incomplete TMEP request"));
@@ -143,7 +213,7 @@ bool sendReading(float temperature, float humidity) {
     return false;
   }
 
-  // Read only the HTTP status line. Any HTTP error must not count as success.
+  // Kontrolujeme pouze stavový řádek HTTP, nikoli celé tělo odpovědi.
   char statusLine[kStatusCapacity];
   size_t used = 0;
   bool complete = false;
@@ -178,12 +248,12 @@ bool sendReading(float temperature, float humidity) {
   statusLine[used] = '\0';
   client.stop();
 
-  // Accept HTTP/1.x success responses (2xx), not redirects or errors.
+  // Za úspěch počítáme 2xx; přesměrování či chyba serveru se nesmí skrýt.
   if (!complete || strncmp(statusLine, "HTTP/1.", 7) != 0) {
     Serial.println(F("TMEP reply missing or invalid"));
     return false;
   }
-  const char *codeText = strchr(statusLine, ' ');
+  const char* codeText = strchr(statusLine, ' ');
   if (codeText == nullptr || strlen(codeText) < 4 ||
       codeText[1] < '0' || codeText[1] > '9' ||
       codeText[2] < '0' || codeText[2] > '9' ||
@@ -200,7 +270,7 @@ bool sendReading(float temperature, float humidity) {
   return status >= 200 && status < 300;
 }
 
-} // namespace
+} // anonymní jmenný prostor
 
 void setup() {
   Serial.begin(115200);
@@ -217,10 +287,10 @@ void setup() {
     }
   }
 
-  // All paths end in deep sleep, including sensor/network/server errors.
+  // Každý běh končí spánkem, také po chybě senzoru, Wi-Fi či serveru.
   sleepUntilNextReading();
 }
 
 void loop() {
-  // A wakeup from ESP.deepSleep() restarts setup() after a hardware reset.
+  // Deep sleep probouzí ESP8266 resetem, proto se další cyklus vrátí do setup().
 }
