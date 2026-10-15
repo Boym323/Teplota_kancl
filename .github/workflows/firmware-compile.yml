@@ -37,5 +37,10 @@ jobs:
           arduino-cli core install esp8266:esp8266 --additional-urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli lib install "Adafruit SHT4x Library"
 
+      - name: Test RTC Wi-Fi cache without hardware
+        run: |
+          g++ -std=c++11 -O2 -Wall -Wextra -Werror tests/wifi_rtc_cache_test.cpp -o /tmp/teplota-wifi-cache-test
+          /tmp/teplota-wifi-cache-test
+
       - name: Compile for NodeMCU ESP8266
         run: arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --warnings default .
