@@ -26,7 +26,7 @@ Po dobu hlubokého spánku se nic nového nevypisuje. Pro pravidelné probouzen�
 | `SHT4x not found` | Senzor nedostupný na I²C. | Napájení a GND, SDA/SCL, správné piny desky, funkčnost senzoru. |
 | `SHT4x read failed` | Senzor nevrátil platný výsledek API. | Napájení, kontakt vodičů a elektromagnetické rušení. |
 | `Invalid SHT4x values` | Načtené číslo není konečné nebo mimo fyzikální rozsah. | Čidlo a jeho umístění; porovnat s referenčním měřením. |
-| `Wi-Fi connection timed out` | Do 15 sekund nenastal stav `WL_CONNECTED`. | SSID, heslo v `config.h`, signál 2,4 GHz, DHCP, dostupnost AP. |
+| `Wi-Fi connection timed out` | Do 15 sekund nenastal stav `WL_CONNECTED`. | SSID, heslo v `Teplota_kancl_local.h`, signál 2,4 GHz, DHCP, dostupnost AP. |
 | `TMEP host name too long` | Název subdomény přesahuje povolený buffer. | Zkrátit `TMEP_DOMAIN`; nepsat celou doménu `.tmep.cz`. |
 | `TMEP request too long` | URL/hlavičky překročily buffer požadavku. | Zkontrolovat neobvykle dlouhý `TMEP_TEMPERATURE_GUID`. |
 | `TMEP connection failed` | DNS nebo TCP připojení na port 80 se nezdařilo. | DNS, internet, firewall, dostupnost cílové domény. |
@@ -39,7 +39,7 @@ Po dobu hlubokého spánku se nic nového nevypisuje. Pro pravidelné probouzen�
 
 ### Konfigurace
 
-Aktuální firmware podporuje lokální `config.h` a zveřejněný `config.example.h`. Pokud `config.h` neexistuje, použijí se výchozí hodnoty z příkladu. Zkontrolujte, že máte vlastní nastavení a skutečně se kompiluje do výsledného obrazu. `config.h` není trackován Gitem.
+Aktuální firmware podporuje lokální `Teplota_kancl_local.h` a zveřejněný `config.example.h`. Pokud `Teplota_kancl_local.h` neexistuje, použijí se výchozí hodnoty z příkladu. Zkontrolujte, že máte vlastní nastavení a skutečně se kompiluje do výsledného obrazu. `Teplota_kancl_local.h` není trackován Gitem.
 
 ### Měření na TMEP chybí
 
