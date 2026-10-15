@@ -21,6 +21,14 @@
 #include "config.example.h"
 #endif
 
+// Kompatibilita se soukromými konfiguracemi vytvořenými před zavedením voleb.
+#ifndef TMEP_FAST_WIFI
+#define TMEP_FAST_WIFI 1
+#endif
+#ifndef TMEP_FAST_SLEEP
+#define TMEP_FAST_SLEEP 1
+#endif
+
 namespace {
 
 constexpr uint32_t kWifiTimeoutMs = 15000;
