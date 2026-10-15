@@ -10,7 +10,7 @@ Platí pro firmware [`Teplota_kancl.ino`](../Teplota_kancl.ino) ve větvi s opti
 | SHT4x | Adafruit SHT4x Library | Změření teploty a relativní vlhkosti |
 | Síť | ESP8266WiFi + WiFiClient | TCP spojení a HTTP GET |
 | Cíl | TMEP.cz | Přijímá hodnoty pod nastavenými parametry |
-| Konfigurace | `config.h` / `config.example.h` | Wi-Fi, subdoména TMEP, GUID, spánek |
+| Konfigurace | `Teplota_kancl_local.h` / `config.example.h` | Wi-Fi, subdoména TMEP, GUID, spánek |
 | Diagnostika | `Serial` | Výpis měření, chyb a HTTP statusu |
 
 Zařízení neposkytuje webový server, vlastní API, OTA ani lokální historii.
@@ -56,7 +56,7 @@ Naměřená teplota musí být v rozsahu **−40 až 125 °C**, relativní vlhko
 
 ## Připojení k Wi-Fi
 
-Konfigurace používá makra z lokálního `config.h` nebo veřejného `config.example.h`. Při neprázdném `WIFI_PASSWORD` se používá `WiFi.begin(ssid, password)`, jinak `WiFi.begin(ssid)`. Funkce `WiFi.persistent(false)` brání opakovaným zápisům Wi-Fi nastavení do flash. Připojení má timeout **15 000 ms** s `delay(250)` ve smyčce.
+Konfigurace používá makra z lokálního `Teplota_kancl_local.h` nebo veřejného `config.example.h`. Při neprázdném `WIFI_PASSWORD` se používá `WiFi.begin(ssid, password)`, jinak `WiFi.begin(ssid)`. Funkce `WiFi.persistent(false)` brání opakovaným zápisům Wi-Fi nastavení do flash. Připojení má timeout **15 000 ms** s `delay(250)` ve smyčce.
 
 Tento limit se týká čekání na stav `WL_CONNECTED`. Nevytváří celkovou horní mez pro kompletní HTTP síťový cyklus ani pro DNS.
 
