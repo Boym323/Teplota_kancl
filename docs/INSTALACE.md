@@ -75,6 +75,10 @@ Makra znamenají: `WIFI_SSID` název Wi-Fi; `WIFI_PASSWORD` heslo (prázdné = o
 
 Případné starší heslo viditelné v historii repozitáře je nutné považovat za prozrazené a v případě platnosti ho změnit.
 
+### Volitelné optimalizace probouzení
+
+V `Teplota_kancl_local.h` můžete nastavit `#define TMEP_FAST_WIFI 1` a `#define TMEP_FAST_SLEEP 1`. První používá uložené BSSID/kanál posledního AP v RTC RAM (fallback po 2,5 s), druhá zkracuje vypínání rádia. Obě volby jsou v ukázkové konfiguraci zapnuté; při potížích je nastavte na `0` a nové sestavení nahrajte do desky. RTC cache vydrží deep sleep, nikoliv nutně odpojení napájení.
+
 ### Příklad adresy pro TMEP
 
 Pokud `TMEP_DOMAIN` = `priklad` a `TMEP_TEMPERATURE_GUID` = `teplota`, firmware odešle:

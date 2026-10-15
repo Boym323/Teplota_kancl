@@ -37,6 +37,10 @@ Po dobu hlubokého spánku se nic nového nevypisuje. Pro pravidelné probouzen�
 | `TMEP HTTP status: 3xx/4xx/5xx` | Server vrátil přesměrování nebo chybu. | Parametry domény, konfiguraci TMEP, změny endpointu. |
 | `Deep sleep (seconds): 60` a žádné další měření | Zařízení možná neusíná/probouzí se nesprávně. | GPIO16 ↔ RST, schéma desky, napájení. |
 
+### Diagnostika rychlé Wi-Fi
+
+Při platné RTC cache se vypíše `Wi-Fi: cached AP`. Pokud se připojení během 2,5 s nepodaří, následuje `Wi-Fi: cached AP failed, scanning` a standardní vyhledání sítě. Po změně AP nebo kanálu je tento fallback očekávaný. `TMEP_FAST_WIFI=0` v lokální konfiguraci rychlé spojení vypne. `TMEP_FAST_SLEEP=0` vrací běžné uspávání, pokud by nový režim zhoršoval probouzení na konkrétní desce.
+
 ### Konfigurace
 
 Aktuální firmware podporuje lokální `Teplota_kancl_local.h` a zveřejněný `config.example.h`. Pokud `Teplota_kancl_local.h` neexistuje, použijí se výchozí hodnoty z příkladu. Zkontrolujte, že máte vlastní nastavení a skutečně se kompiluje do výsledného obrazu. `Teplota_kancl_local.h` není trackován Gitem.
@@ -53,7 +57,7 @@ Aktuální firmware podporuje lokální `Teplota_kancl_local.h` a zveřejněný 
 
 - Senzor se načítá **před připojením k Wi-Fi**.
 - V případě chyby senzoru / Wi-Fi / HTTP se další měření neprovádí okamžitě, ale až **po spánku**.
-- Wi-Fi má časový limit připojení 15 sekund.
+- Wi-Fi má časový limit připojení 15 sekund; opakované spojení může využít RTC cache s fallbackem po 2,5 s.
 - Firmware rozlišuje úspěšné HTTP odpovědi 2xx od 3xx–5xx.
 - Hodnoty se kontrolují a požadavek je sestaven bez dočasných objektů Arduino `String`.
 - Doba spánku je stále výchozích **60 sekund** a začíná po skončení pokusu, nikoli v přesné minutě.

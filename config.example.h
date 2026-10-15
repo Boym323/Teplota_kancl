@@ -1,10 +1,21 @@
 #pragma once
 
-// Default settings retained from the original sketch for compatibility.
-// Copy this file to Teplota_kancl_local.h and edit there before deploying. Teplota_kancl_local.h is ignored by Git.
-#define WIFI_SSID "NewSWSfree"
-#define WIFI_PASSWORD ""  // Empty string = open Wi-Fi; never commit real passwords.
+// Veřejná ukázková konfigurace. Před nasazením ji zkopírujte do
+// Teplota_kancl_local.h a soukromé hodnoty upravte pouze tam.
+// Soubor Teplota_kancl_local.h je v .gitignore a nesmí obsahovat veřejně sdílená hesla.
 
-#define TMEP_DOMAIN "mps"             // Subdomain ONLY (without .tmep.cz).
-#define TMEP_TEMPERATURE_GUID "temp"  // Temperature query parameter name.
-#define TMEP_SLEEP_SECONDS 60UL      // Deep sleep AFTER a measurement attempt.
+#define WIFI_SSID "NewSWSfree"       // Název Wi-Fi; původní veřejná hodnota projektu.
+#define WIFI_PASSWORD ""             // Prázdné heslo = otevřená síť, jinak heslo WPA/WPA2.
+
+#define TMEP_DOMAIN "mps"            // Jen subdoména, bez .tmep.cz.
+#define TMEP_TEMPERATURE_GUID "temp" // Klíč parametru pro teplotu v URL.
+#define TMEP_SLEEP_SECONDS 60UL      // Doba spánku po každém pokusu (sekundy).
+
+// Rychlé spojení: kanál a BSSID z předchozího připojení v RTC paměti.
+// Při změně AP se po 2,5 s automaticky přepne na běžné vyhledávání.
+// Nastavte 0, pokud vaše Wi-Fi rychlé spojení nepodporuje nebo způsobuje potíže.
+#define TMEP_FAST_WIFI 1
+
+// Bez čekání na standardní vypínání rádia (ESP.deepSleepInstant).
+// Nastavte 0, pokud se na konkrétní desce objeví problém s uspáváním.
+#define TMEP_FAST_SLEEP 1

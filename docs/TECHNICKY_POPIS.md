@@ -56,9 +56,17 @@ Naměřená teplota musí být v rozsahu **−40 až 125 °C**, relativní vlhko
 
 ## Připojení k Wi-Fi
 
-Konfigurace používá makra z lokálního `Teplota_kancl_local.h` nebo veřejného `config.example.h`. Při neprázdném `WIFI_PASSWORD` se používá `WiFi.begin(ssid, password)`, jinak `WiFi.begin(ssid)`. Funkce `WiFi.persistent(false)` brání opakovaným zápisům Wi-Fi nastavení do flash. Připojení má timeout **15 000 ms** s `delay(250)` ve smyčce.
+Konfigurace používá makra z lokálního `Teplota_kancl_local.h` nebo veřejného `config.example.h`. Při neprázdném `WIFI_PASSWORD` se používá `WiFi.begin(ssid, password)`, jinak `WiFi.begin(ssid)`. Funkce `WiFi.persistent(false)` brání opakovaným zápisům Wi-Fi nastavení do flash. Připojení má timeout **15 000 ms** s `delay(50)` ve smyčce.
 
 Tento limit se týká čekání na stav `WL_CONNECTED`. Nevytváří celkovou horní mez pro kompletní HTTP síťový cyklus ani pro DNS.
+
+### Rychlé opětovné připojení pomocí RTC RAM
+
+Je-li `TMEP_FAST_WIFI=1`, uloží se po úspěšném spojení do RTC paměti (od offsetu 32, tedy za prvními 128 bajty) **BSSID, kanál a kontrolní otisk SSID** s kontrolním součtem. RTC záznam lze znovu použít po probuzení z deep sleep. Neobsahuje heslo Wi-Fi.
+
+Při platném záznamu začne `WiFi.begin()` přímo s kanálem a BSSID; po **2 500 ms** bez připojení následuje `WiFi.disconnect(false)` a nové spojení bez nápovědy. I s fallbackem zůstává celkový limit Wi-Fi **15 000 ms**. Změna SSID, chybné BSSID či poškozený záznam znamenají standardní vyhledávání. Konfigurace `TMEP_FAST_WIFI=0` cache zcela vypne.
+
+Validace je definována v [`wifi_rtc_cache.h`](../wifi_rtc_cache.h) a ověřena hostitelskými testy. FNV kontrolní otisk **není kryptografická ochrana**. Zrychlení je očekávané zejména na stabilním přístupovém bodu, zatím však nebylo změřeno na fyzickém zařízení.
 
 ## Formát HTTP
 
@@ -94,7 +102,7 @@ Konstanta `TMEP_SLEEP_SECONDS` má v ukázkové konfiguraci hodnotu **60UL**. P�
 ESP.deepSleep(static_cast<uint64_t>(TMEP_SLEEP_SECONDS) * 1000000ULL);
 ```
 
-64bitové násobení odstraňuje přetečení při běžném násobení 32bitového časového intervalu, samo o sobě ale neověřuje hardwarový limit maximální délky deep sleep na daném ESP8266. Pro probuzení je typicky nutné propojení GPIO16–RST.
+64bitové násobení brání přetečení při převodu sekund na mikrosekundy. Firmware navíc omezuje požadovanou dobu podle `ESP.deepSleepMax()`. Při zapnuté volbě `TMEP_FAST_SLEEP=1` používá `ESP.deepSleepInstant()`, který zkracuje čekání při vypínání rádia; vypnutím volby se vrátí na běžný `ESP.deepSleep()`. Pro probuzení je typicky nutné propojení GPIO16–RST.
 
 Po každém resetu začíná nové měření. Čas mezi měřeními je:
 
@@ -128,4 +136,4 @@ Nejde o přesný periodický scheduler.
 
 ## Automatické ověření
 
-[Workflow Arduino CLI](../.github/workflows/firmware-compile.yml) kompiluje pro `esp8266:esp8266:nodemcuv2`. Bez fyzického senzoru a Wi-Fi to **neověřuje spotřebu, probouzení, správnost I²C ani komunikaci s TMEP**.
+[Workflow Arduino CLI](../.github/workflows/firmware-compile.yml) testuje validaci RTC cache v C++ na hostitelském systému a kompiluje pro `esp8266:esp8266:nodemcuv2`. Bez fyzického senzoru a Wi-Fi to **neověřuje spotřebu, probouzení, správnost I²C ani komunikaci s TMEP**.

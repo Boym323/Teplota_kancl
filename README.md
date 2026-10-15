@@ -56,6 +56,8 @@ Nepřipojujte 5V I²C signály přímo na GPIO ESP8266.
 | `TMEP_DOMAIN` | Subdoména bez `.tmep.cz` | `mps` |
 | `TMEP_TEMPERATURE_GUID` | Název parametru teploty | `temp` |
 | `TMEP_SLEEP_SECONDS` | Doba hlubokého spánku v sekundách | `60UL` |
+| `TMEP_FAST_WIFI` | Rychlé opětovné připojení přes RTC cache BSSID a kanálu; `0` funkci vypne | `1` |
+| `TMEP_FAST_SLEEP` | Rychlejší vstup do deep sleep pomocí `ESP.deepSleepInstant()`; `0` pro původní režim | `1` |
 
 Firmware odešle požadavek v tomto tvaru (ilustrační hodnoty):
 
@@ -66,6 +68,14 @@ Connection: close
 ```
 
 Název `humV` je pevně zakódovaný parametr pro relativní vlhkost. Konfiguraci subdomény, parametru teploty a přijetí dat ověřte v účtu TMEP.
+
+## Další optimalizace spotřeby
+
+- **Rychlé připojení Wi-Fi:** po úspěšném připojení firmware uloží kanál a BSSID přístupového bodu do kontrolované **RTC RAM**. Při dalším probuzení z hlubokého spánku se pokusí připojit rovnou na známý bod bez plného vyhledávání. Pokud se během **2,5 s** nepřipojí, přejde na běžné hledání; celkový limit připojování zůstává **15 s**. V RTC RAM se **neukládá heslo**. Při změně SSID nebo poškození dat se cache zahodí.
+- **Rychlejší uspání:** volba `TMEP_FAST_SLEEP=1` používá `ESP.deepSleepInstant()`, které nečeká na standardní vypnutí Wi-Fi rádia. Poslední sériová zpráva se před tím vyprázdní a HTTP klient uzavře. Pro kompatibilitu lze volbu přepnout na `0`.
+- **Limit doby spánku:** firmware respektuje hodnotu `ESP.deepSleepMax()` vracenou danou platformou.
+
+*Skutečné zrychlení a úspora energie závisí na AP, napájení a desce. Bez testu na zařízení je nelze kvantifikovat.*
 
 ## Spolehlivost a omezení
 
@@ -79,7 +89,7 @@ Název `humV` je pevně zakódovaný parametr pro relativní vlhkost. Konfigurac
 
 ## Kompilace a CI
 
-Workflow [`Firmware compile`](.github/workflows/firmware-compile.yml) sestavuje sketch pro `esp8266:esp8266:nodemcuv2` pomocí Arduino CLI. Spouští se při změnách firmware / hlaviček na PR a při push do `main` (lze také ručně). Nejde o test funkčnosti čidla, HTTP odezvy TMEP nebo skutečné spotřeby.
+Workflow [`Firmware compile`](.github/workflows/firmware-compile.yml) spouští také hostitelský test integrity RTC cache a sestavuje sketch pro `esp8266:esp8266:nodemcuv2` pomocí Arduino CLI. Spouští se při změnách firmware / hlaviček na PR a při push do `main` (lze také ručně). Nejde o test funkčnosti čidla, HTTP odezvy TMEP nebo skutečné spotřeby.
 
 ## Dokumentace
 
@@ -94,6 +104,8 @@ Workflow [`Firmware compile`](.github/workflows/firmware-compile.yml) sestavuje 
 .
 ├── .github/workflows/firmware-compile.yml
 ├── .gitignore
+├── wifi_rtc_cache.h              # Kontrola uloženého AP v RTC RAM
+├── tests/wifi_rtc_cache_test.cpp # Test integrity RTC cache
 ├── config.example.h
 ├── README.md
 ├── Teplota_kancl.ino
