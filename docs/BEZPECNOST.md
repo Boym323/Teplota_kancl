@@ -4,11 +4,11 @@ Upozornění vychází z firmware [`Teplota_kancl.ino`](../Teplota_kancl.ino). N
 
 ## Historicky zveřejněné heslo
 
-Původní zdrojový soubor obsahoval **zakomentovaný řetězec označený jako Wi-Fi heslo**. V optimalizované verzi už v `Teplota_kancl.ino` není a nové lokální údaje mají být v souboru **`config.h`**, který je ignorován Gitem.
+Původní zdrojový soubor obsahoval **zakomentovaný řetězec označený jako Wi-Fi heslo**. V optimalizované verzi už v `Teplota_kancl.ino` není a nové lokální údaje mají být v souboru **`Teplota_kancl_local.h`**, který je ignorován Gitem.
 
 **DŮLEŽITÉ:** Git historie může dřívější heslo stále obsahovat a pouhé smazání z nové verze **neznamená jeho zneplatnění ani vymazání historie**. Pokud heslo někdy platilo nebo stále platí, je potřeba ho **okamžitě změnit**. Případné odstranění historického obsahu vyžaduje zvláštní plán přepisu historie a koordinaci s uživateli forků/klonů.
 
-Soubor `config.h` do veřejného repozitáře neposílejte, a to ani při ručním nuceném `git add -f`. Před zveřejněním změn vždy ověřte jejich obsah.
+Soubor `Teplota_kancl_local.h` do veřejného repozitáře neposílejte, a to ani při ručním nuceném `git add -f`. Před zveřejněním změn vždy ověřte jejich obsah.
 
 ## Wi-Fi
 
