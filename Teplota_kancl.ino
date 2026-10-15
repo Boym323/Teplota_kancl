@@ -10,9 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 
-// Keep local Wi-Fi passwords in config.h, not in Git.
-#if __has_include("config.h")
-#include "config.h"
+// Keep local Wi-Fi passwords in Teplota_kancl_local.h, not in Git.
+#if __has_include("Teplota_kancl_local.h")
+#include "Teplota_kancl_local.h"
 #else
 #include "config.example.h"
 #endif
