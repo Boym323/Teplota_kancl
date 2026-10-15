@@ -55,37 +55,29 @@ První poskytuje ESP8266 Arduino core, druhou externí Adafruit knihovna. Projek
 
 ## 4. Nastavení Wi-Fi a TMEP
 
-V horní části sketch najděte proměnné:
+Firmware čte nastavení z **`Teplota_kancl_local.h`**, pokud v adresáři sketch existuje. Jinak použije [`config.example.h`](../config.example.h) s původními veřejnými výchozími hodnotami. Tím je zachována kompatibilita, ale doporučujeme vytvořit lokální nastavení vždy před nasazením.
+
+1. Zkopírujte `config.example.h` na `Teplota_kancl_local.h` ve stejné složce jako `Teplota_kancl.ino`.
+2. V souboru `Teplota_kancl_local.h` upravte:
 
 ```cpp
-const char* ssid   = "NAZEV_SITE"; 
-const char* domain = "MOJE_SUBDOMENA"; 
-const char* guid   = "NAZEV_MERENI"; 
-const long sleep   = 60;
+#define WIFI_SSID "NAZEV_SITE"
+#define WIFI_PASSWORD "HESLO_SITE"  // Pro otevřenou síť použijte ""
+#define TMEP_DOMAIN "MOJE_SUBDOMENA"
+#define TMEP_TEMPERATURE_GUID "NAZEV_MERENI"
+#define TMEP_SLEEP_SECONDS 60UL
 ```
 
-Toto je **ukázka konfigurace**, nikoli přesný výpis původního kódu. Nahraďte zástupné hodnoty podle svého prostředí.
+3. `Teplota_kancl_local.h` je v `.gitignore`: v běžné práci nebude omylem přidán do nového commitu. **Před každým zveřejněním změn přesto ověřte, že neobsahují hesla.**
+4. Pokud si v původní verzi upravujete síť přímo v `.ino`, přeneste tyto hodnoty do `Teplota_kancl_local.h`. Od této verze se přímé staré proměnné `ssid` / `domain` / `guid` / `sleep` nepoužívají.
 
-- `ssid`: SSID Wi-Fi.
-- `domain`: pouze subdoména, například pro `priklad.tmep.cz` napište `priklad`.
-- `guid`: parametr teploty, pro který na TMEP očekáváte data.
-- `sleep`: počet sekund, po které má ESP8266 po odeslání spát.
+Makra znamenají: `WIFI_SSID` název Wi-Fi; `WIFI_PASSWORD` heslo (prázdné = otevřená síť); `TMEP_DOMAIN` subdoména bez `.tmep.cz`; `TMEP_TEMPERATURE_GUID` parametr teploty; `TMEP_SLEEP_SECONDS` dobu spánku v sekundách **po** každém pokusu o měření a odeslání. Po změně nastavení je nutné firmware znovu nahrát.
 
-Ve výchozí implementaci se připojení provádí přes `WiFi.begin(ssid)`, **bez hesla**. Chcete-li použít zabezpečenou Wi-Fi, je nutné upravit volání a heslo řešit bezpečně. Nepublikujte klíče Wi-Fi ani jiné tajné údaje do GitHubu.
-
-```cpp
-// Příklad změny pouze pro lokální konfiguraci:
-const char* wifiPassword = "HESLO_SITE";
-
-// V setup() nahraďte původní WiFi.begin(ssid):
-WiFi.begin(ssid, wifiPassword);
-```
-
-Neexistuje webové konfigurační rozhraní, provisioning ani konfigurace přes soubor na zařízení. Po změně nastavení je nutné sketch znovu nahrát.
+Případné starší heslo viditelné v historii repozitáře je nutné považovat za prozrazené a v případě platnosti ho změnit.
 
 ### Příklad adresy pro TMEP
 
-Pokud `domain` = `priklad` a `guid` = `teplota`, firmware odešle:
+Pokud `TMEP_DOMAIN` = `priklad` a `TMEP_TEMPERATURE_GUID` = `teplota`, firmware odešle:
 
 ```text
 http://priklad.tmep.cz/?teplota=22.4&humV=41.7
@@ -101,8 +93,8 @@ http://priklad.tmep.cz/?teplota=22.4&humV=41.7
 4. Proveďte kompilaci pomocí **Verify**.
 5. Spusťte **Upload**. Některé desky vyžadují manuální uvedení do režimu nahrávání; řiďte se jejich dokumentací.
 6. Otevřete **Serial Monitor** s rychlostí **115200**.
-7. Očekávejte výpis detekce SHT4x, Wi-Fi, IP adresy, teploty a vlhkosti a navázání spojení se serverem.
-8. Ověřte, že se hodnoty skutečně zobrazují na TMEP.cz. Samotný výpis `Client connected` nebo `Requesting URL` úspěšné přijetí měření **nedokazuje**.
+7. Očekávejte výpis teploty a vlhkosti, připojení Wi-Fi a v případě úspěchu `TMEP HTTP status: 200` (nebo jiný status 2xx). Při chybě se zařízení rovněž uspí.
+8. Ověřte, že se hodnoty skutečně zobrazují na TMEP.cz. Ani HTTP status 2xx sám o sobě jednoznačně neprokazuje uložení historie měření.
 9. Ověřte i další cyklus po probuzení z deep sleep.
 
 Pro ladění probouzení lze **dočasně** vynechat nebo upravit deep sleep, ale to už je změna funkčnosti sketch, nikoliv jeho původní chování.

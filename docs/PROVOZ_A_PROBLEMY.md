@@ -1,73 +1,67 @@
-# Provoz, diagnostika a řešení problémů
+# Provoz a řešení problémů
 
-Návod vychází ze stávajícího [`Teplota_kancl.ino`](../Teplota_kancl.ino). Předpokládá přístup k zařízení, Arduino IDE a sériovému monitoru. V repozitáři není monitoring, dashboard ani automatická diagnostika.
+Průvodce pro firmware [`Teplota_kancl.ino`](../Teplota_kancl.ino), který měří SHT4x, odešle hodnoty do TMEP a **po každém pokusu vstoupí do deep sleep**. Firmware nemá OTA, vlastní dashboard ani dálkovou diagnostiku.
 
-## Jak poznat správný provoz
+## Sériový monitor
 
-Po restartu nebo probuzení ze spánku by měly následovat následující fáze:
+Arduino IDE → **Tools → Serial Monitor**, rychlost **115200**. Úspěšný cyklus může vypadat přibližně takto:
 
-1. Inicializace a nalezení senzoru (`Found SHT4x sensor`).
-2. Výpis sériového čísla a režimu měření (`High precision`).
-3. Připojování k nastavené Wi-Fi, následně `WiFi connected` a IP adresa.
-4. Informace o režimu ohřevu (`No heater`).
-5. Změřená teplota, relativní vlhkost a doba načítání.
-6. Připojení k `<domain>.tmep.cz`, případně `Client connected`.
-7. Výpis `Requesting URL: ...`.
-8. Při dostupnosti dat od serveru hluboký spánek a po probuzení nový start.
+```text
+Temperature (C): 23.50
+Humidity (% RH): 45.20
+Wi-Fi connected; IP: 192.0.2.10
+TMEP HTTP status: 200
+TMEP accepted HTTP request
+Deep sleep (seconds): 60
+```
 
-**Výstup do sériového monitoru není důkazem doručení dat.** Po úspěšném odeslání firmware nevyhodnocuje HTTP status ani tělo odpovědi. Přijaté hodnoty kontrolujte přímo na straně služby TMEP.
+Jde o *ilustrační* výpis, nikoli o skutečně naměřené hodnoty. Pouze status 2xx **nedokazuje**, že jsou hodnoty uložené a zobrazené v TMEP; zkontrolujte je i ve službě.
 
-Otevřete Arduino IDE → **Tools → Serial Monitor** a nastavte **115200 baudů**. Během hlubokého spánku není očekáván průběžný výpis; některé běžné desky také používají odlišnou rychlost pro startovací hlášení bootloaderu.
+Po dobu hlubokého spánku se nic nového nevypisuje. Pro pravidelné probouzení bývá u ESP8266 potřeba propojení **GPIO16 → RST**. Každé probuzení vyvolá reset, takže počáteční fáze sériového výpisu začne znovu.
 
-## Diagnostika podle příznaku
+## Problémy a postupy
 
-| Příznak nebo hláška | Pravděpodobná příčina / ověření | Doporučený postup |
+| Hláška / příznak | Význam | Co ověřit |
 | --- | --- | --- |
-| `Couldn't find SHT4x` | Senzor není na I²C dostupný. | Zkontrolovat napájení, společnou GND, SDA/SCL, konektory a adresaci I²C; ověřit správnou desku. |
-| Zařízení skončí po `Couldn't find SHT4x` | V programu následuje nekonečné čekání. | Opravit zapojení a zařízení restartovat; tento stav sám nepokračuje. |
-| Nekonečné tečky po `Connecting to` | `WiFi.status()` nedosáhl `WL_CONNECTED`. | Ověřit SSID, otevřenou/chráněnou síť, dostupnost 2,4GHz Wi-Fi, signál a DHCP; aktuální sketch volá `WiFi.begin(ssid)` bez hesla. |
-| `Connection failed` | `WiFiClient::connect()` nenavázal TCP spojení. | Ověřit DNS, doménu, internet, TCP port 80, firewall, dostupnost TMEP. |
-| `>>> Client Timeout !` | Do 5 sekund po odeslání nebyla dostupná žádná data odpovědi. | Prověřit dostupnost serveru a síť; další `loop()` může běžet bez prodlevy. |
-| Hodnoty se vypisují, ale na TMEP chybí | Chybná subdoména, GUID, očekávané parametry, případně chyba HTTP aplikace. | Porovnat URL s nastavením TMEP; testovat mimo zařízení, sledovat dostupnost služby. Kód HTTP status nekontroluje. |
-| Objeví se pouze první měření | ESP8266 se neprobudilo z deep sleep. | Ověřit podporu a propojení GPIO16 ↔ RST podle konkrétní desky. |
-| Měření se opakuje v jiném intervalu než 60 s | 60 s je jen doba spánku, nikoliv celý cyklus. | Započítat boot, hledání Wi-Fi, měření a přenos. |
-| Velmi rychlé opakování měření při výpadku TMEP | Předčasné `return` z `loop()` přeskočí deep sleep. | Zajistit dostupnost serveru; robustní náprava vyžaduje změnu programu (spánek / backoff i při selhání). |
-| Data jsou nepravděpodobná | Okolní teplota, umístění senzoru, napájení, rušení nebo měření u tepelného zdroje. | Porovnat s referenčním měřidlem a zajistit správné umístění; sketch nefiltruje hodnoty. |
-| Nelze firmware nahrát | Chybný port, kabel, USB–UART ovladač či režim bootloaderu. | Použít datový kabel, správný profil desky a pokyny výrobce pro přechod do upload režimu. |
+| `SHT4x not found` | Senzor nedostupný na I²C. | Napájení a GND, SDA/SCL, správné piny desky, funkčnost senzoru. |
+| `SHT4x read failed` | Senzor nevrátil platný výsledek API. | Napájení, kontakt vodičů a elektromagnetické rušení. |
+| `Invalid SHT4x values` | Načtené číslo není konečné nebo mimo fyzikální rozsah. | Čidlo a jeho umístění; porovnat s referenčním měřením. |
+| `Wi-Fi connection timed out` | Do 15 sekund nenastal stav `WL_CONNECTED`. | SSID, heslo v `Teplota_kancl_local.h`, signál 2,4 GHz, DHCP, dostupnost AP. |
+| `TMEP host name too long` | Název subdomény přesahuje povolený buffer. | Zkrátit `TMEP_DOMAIN`; nepsat celou doménu `.tmep.cz`. |
+| `TMEP request too long` | URL/hlavičky překročily buffer požadavku. | Zkontrolovat neobvykle dlouhý `TMEP_TEMPERATURE_GUID`. |
+| `TMEP connection failed` | DNS nebo TCP připojení na port 80 se nezdařilo. | DNS, internet, firewall, dostupnost cílové domény. |
+| `Incomplete TMEP request` | TCP klient nepotvrdil odeslání celé zprávy. | Nestabilní Wi-Fi, vzdálený server, síťové chyby. |
+| `TMEP reply missing or invalid` | Odpověď nemá úplný či rozpoznatelný HTTP/1.x stavový řádek. | Dostupnost serveru, proxy a smysluplnost odpovědi. |
+| `TMEP status line too long` | Odpověď překročila malý buffer na HTTP status. | Nečekaná odpověď serveru / proxy. |
+| `TMEP HTTP status malformed` | Odpověď nemá standardní třímístný stavový kód. | Server nebo síťový prostředník. |
+| `TMEP HTTP status: 3xx/4xx/5xx` | Server vrátil přesměrování nebo chybu. | Parametry domény, konfiguraci TMEP, změny endpointu. |
+| `Deep sleep (seconds): 60` a žádné další měření | Zařízení možná neusíná/probouzí se nesprávně. | GPIO16 ↔ RST, schéma desky, napájení. |
 
-## Postup při nedostupnosti TMEP
+### Konfigurace
 
-1. Na sériové lince zjistěte, zda nastalo `Connection failed`, `Client Timeout`, nebo se pouze nevykreslila data v TMEP.
-2. Ověřte hodnotu `domain` a sestavený `host` (`.tmep.cz` se připojuje automaticky).
-3. Ověřte výpis `Requesting URL`: musí obsahovat očekávaný parametr teploty (`guid`) a `humV`.
-4. Na jiném zařízení ze stejné sítě ověřte dostupnost cílového hostitele a konkrétního požadavku. Pozor: přímé otevření měřicí URL může samo odeslat testovací hodnotu.
-5. Zkontrolujte dashboard / historii na TMEP. Samotné navázání spojení **neprokazuje přijetí měření**.
-6. Pokud problém trvá, ukládejte pouze diagnostiku bez hesel, interních síťových detailů nebo jiných citlivých údajů.
+Aktuální firmware podporuje lokální `Teplota_kancl_local.h` a zveřejněný `config.example.h`. Pokud `Teplota_kancl_local.h` neexistuje, použijí se výchozí hodnoty z příkladu. Zkontrolujte, že máte vlastní nastavení a skutečně se kompiluje do výsledného obrazu. `Teplota_kancl_local.h` není trackován Gitem.
 
-## Proč není režim vhodný pro bezobslužnou kritickou telemetrii
+### Měření na TMEP chybí
 
-V nynějším stavu existují tyto ověřené mezery:
+1. Ověřte sériový výpis: došlo k připojení na Wi-Fi a HTTP status byl 2xx?
+2. Ověřte nastavení `TMEP_DOMAIN` a `TMEP_TEMPERATURE_GUID` proti TMEP. Formát cesty je `/?<guid>=<teplota>&humV=<vlhkost>`.
+3. Ověřte DNS / dostupnost cílové služby a zda nevznikla změna endpointu.
+4. Zkontrolujte zobrazení na straně služby. Testovací otevření URL může **zapsat testovací měření**.
+5. Pokud je požadavek přijatý, ale hodnota nezobrazená, diagnostika musí pokračovat na straně služby: status 2xx není potvrzení historie.
 
-- Bez časového limitu připojování k Wi-Fi.
-- Chybí spánek po síťové chybě, takže zařízení může zvýšit spotřebu při výpadku.
-- Chybí potvrzení úspěšného zápisu dat a opakované doručení.
-- Chybí lokální fronta měření, časové značky a kontrola kvality dat.
-- Po selhání senzoru program čeká neomezeně.
-- Není definována správa vzdálených aktualizací.
-- Chybí sestavovací/testovací pipeline a záznam konkrétních verzí knihoven.
+## Záměrné změny chování proti původní verzi
 
-Firmware je proto vhodné nejprve otestovat v cílové síti a na konkrétním hardwaru. Pro přehled plánovaných technických změn viz [Technický popis](TECHNICKY_POPIS.md).
+- Senzor se načítá **před připojením k Wi-Fi**.
+- V případě chyby senzoru / Wi-Fi / HTTP se další měření neprovádí okamžitě, ale až **po spánku**.
+- Wi-Fi má časový limit připojení 15 sekund.
+- Firmware rozlišuje úspěšné HTTP odpovědi 2xx od 3xx–5xx.
+- Hodnoty se kontrolují a požadavek je sestaven bez dočasných objektů Arduino `String`.
+- Doba spánku je stále výchozích **60 sekund** a začíná po skončení pokusu, nikoli v přesné minutě.
 
-## Záznam při řešení incidentu
+## Limity a provozní doporučení
 
-Pro opakovatelné hlášení se hodí shromáždit:
+Není implementováno ukládání nedoručených hodnot, opakované odesílání, aplikací potvrzené zapsání na TMEP, HTTPS ani OTA. Pro bezpečný dlouhodobý provoz pravidelně kontrolujte skutečná data v TMEP, dostupnost senzoru a stav napájení. Není zde definována metodika ani naměřená hodnota spotřeby.
 
-- Model ESP8266 desky a SHT4x senzoru.
-- Verzi nahraného sketch a použitých knihoven.
-- Verzi ESP8266 Arduino core.
-- Popis zapojení včetně GPIO16/RST.
-- Přibližný čas problému a související chybovou hlášku na sériové lince.
-- Informaci, zda se problém týká všech cyklů nebo jen části.
-- Potvrzení, zda byly hodnoty viditelné přímo na TMEP.
+Pro hlášení závad přiložte model desky a senzoru, použitou verzi knihoven, zapojení GPIO16/RST a chybovou hlášku ze sériového monitoru. **Nikdy nepřikládejte hesla ani kompletní soukromou konfiguraci.**
 
-**Nezveřejňujte skutečné Wi-Fi heslo ani jiná přístupová tajemství.**
+Podrobnější popis programu je v [Technickém popisu](TECHNICKY_POPIS.md).

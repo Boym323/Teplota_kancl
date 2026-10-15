@@ -1,66 +1,60 @@
-# Bezpečnost a známá omezení
+# Bezpečnost a provozní omezení
 
-Tento dokument uvádí **ověřené vlastnosti současného sketch** [`Teplota_kancl.ino`](../Teplota_kancl.ino) a **doporučená opatření**. Nejde o bezpečnostní audit hardwaru, Wi-Fi infrastruktury ani služby TMEP.
+Upozornění vychází z firmware [`Teplota_kancl.ino`](../Teplota_kancl.ino). Nejde o penetrační test, certifikaci hardwaru nebo audit služby TMEP.
 
-## 1. Potenciálně citlivé údaje v historii projektu
+## Historicky zveřejněné heslo
 
-V současném souboru sketch se nachází **zakomentovaný původní název Wi-Fi sítě a řetězec označený jako heslo**. Zakomentování samo o sobě přístupový údaj nezneplatňuje ani neskrývá před návštěvníky veřejného GitHub repozitáře.
+Původní zdrojový soubor obsahoval **zakomentovaný řetězec označený jako Wi-Fi heslo**. V optimalizované verzi už v `Teplota_kancl.ino` není a nové lokální údaje mají být v souboru **`Teplota_kancl_local.h`**, který je ignorován Gitem.
 
-**Doporučení s nejvyšší prioritou:**
+**DŮLEŽITÉ:** Git historie může dřívější heslo stále obsahovat a pouhé smazání z nové verze **neznamená jeho zneplatnění ani vymazání historie**. Pokud heslo někdy platilo nebo stále platí, je potřeba ho **okamžitě změnit**. Případné odstranění historického obsahu vyžaduje zvláštní plán přepisu historie a koordinaci s uživateli forků/klonů.
 
-1. Pokud mohl být uvedený údaj někdy platný, **považujte jej za zveřejněný a změňte heslo v příslušné síti**.
-2. Odstraňte zakomentované údaje z aktuálního zdrojového souboru samostatnou, cílenou změnou.
-3. Posuďte, zda je nutné citlivý obsah odstranit i z git historie. Historické přepisy vyžadují koordinaci s uživateli klonů/forků a nenahrazují rotaci hesla.
-4. Do dalších veřejných revizí nikdy neukládejte skutečná hesla, tokeny ani tajné identifikátory. Používejte lokálně generovanou neveřejnou konfiguraci nebo bezpečnější provisioning.
+Soubor `Teplota_kancl_local.h` do veřejného repozitáře neposílejte, a to ani při ručním nuceném `git add -f`. Před zveřejněním změn vždy ověřte jejich obsah.
 
-**Tento dokument tyto údaje neopakuje a nemění firmware ani historii repozitáře.**
+## Wi-Fi
 
-## 2. Komunikace s Wi-Fi
+- Připojení nyní podporuje síť s heslem pomocí `WIFI_PASSWORD`. Prázdná hodnota znamená pokus o připojení k otevřené Wi-Fi.
+- ESP8266 běžně používá **2,4GHz Wi-Fi**.
+- `WiFi.persistent(false)` omezuje opakované zápisy síťové konfigurace do flash.
+- Pro zařízení bez přístupu do interní sítě zvažte izolovanou IoT Wi-Fi a odchozí pravidla pouze k potřebným cílům.
+- Připojení k síti čeká nejvýše **15 sekund**, pak zařízení přejde do spánku.
 
-Aktuální program používá `WiFi.begin(ssid)` **bez předaného hesla**. V praxi je proto zamýšlen pro síť, k níž je takto možné přistoupit; pro WPA/WPA2 síť je zapotřebí úprava programu s bezpečnou konfigurací připojení.
+## HTTP bez TLS
 
-Rizika a doporučení:
-
-- Otevřená Wi-Fi neposkytuje šifrování na rádiové vrstvě.
-- Pokud zařízení nepotřebuje přístup do interních částí LAN, zvažte izolovanou síť pro IoT a omezená odchozí pravidla.
-- Při nasazování zkontrolujte, že Wi-Fi je na frekvenci podporované zařízením (u ESP8266 běžně **2,4 GHz**) a že DNS i port 80 fungují.
-- Změny síťového nastavení v dnešní podobě vyžadují novou kompilaci a nahrání firmware.
-
-## 3. Přenos na TMEP není šifrovaný
-
-Sketch používá `WiFiClient`, `client.connect(host, 80)` a textový `HTTP/1.1` požadavek. **Nepoužívá TLS (HTTPS)**.
+Současný firmware odesílá naměřené hodnoty na `http://<domain>.tmep.cz` přes TCP **port 80**, nepoužívá HTTPS.
 
 Důsledky:
 
-- Měření, cílové jméno hostitele a parametry URL mohou být na síťové trase čitelné.
-- Přenos neposkytuje ochranu integrity na úrovni TLS ani ověření certifikátu serveru.
-- URL může v některých síťových systémech skončit v protokolech; **nedoplňujte do ní hesla ani tajné tokeny**.
+- Cílový server a hodnoty v URL mohou být na trase čitelné nebo pozměnitelné.
+- Není zaručena autentičnost protistrany na úrovni TLS.
+- V URL nesmějí být hesla, tajné tokeny ani osobní údaje.
 
-Možná modernizace je přechod na `WiFiClientSecure` / HTTPS **až po ověření podpory cílové služby**. Nutno doplnit ověřování důvěryhodnosti certifikátu; pouhé použití TLS bez ověření certifikátu není dostatečné.
+Přechod na `WiFiClientSecure` s ověřováním certifikátu je vhodná budoucí úprava **až po ověření, že cílový endpoint TMEP HTTPS podporuje**. TLS bez správného ověřování protistrany není dostačující.
 
-## 4. Omezené vyhodnocení odpovědi serveru
+## Ověřování doručení
 
-Kód čeká nejvýše **5 sekund** na to, až `client.available()` vrátí nenulovou hodnotu. Nepřečte ani nezkontroluje status line (např. `200 OK`), hlavičky nebo obsah odpovědi. Až poté vstoupí do deep sleep.
+Optimalizace nově parsuje první řádek HTTP odpovědi a rozlišuje **2xx** proti ostatním stavům. To je důležitý krok vpřed, ale stále nejde o transakční potvrzení zápisu.
 
-Možný důsledek: i chybová odpověď může vést k uspání, přestože TMEP data odmítl. Vyhodnocení doručení je tedy pouze nepřímé a musí se ověřovat na straně TMEP.
+- Tělo odpovědi se neparsuje.
+- Neexistuje offline fronta ani mechanismus opakovaného odeslání neúspěšného měření.
+- Rozhodnutí o úspěchu vzniká pouze ze stavového kódu HTTP, což nemusí odpovídat zobrazené historii v TMEP.
 
-Doporučení: implementovat časově omezené čtení odpovědi, validaci stavového kódu, omezené retry a bezpečné chování při výpadku.
+## Dostupnost a paměť
 
-## 5. Dostupnost, robustnost a spotřeba
+- Čidlo musí uspět při inicializaci a čtení; neplatné nebo nefyzikální hodnoty se neodesílají.
+- Síťové chyby a HTTP timeouty vždy končí pokusem o hluboký spánek místo okamžité smyčky.
+- `snprintf` s kontrolou délky nahrazuje nebezpečné `strcpy` / `strcat` při stavbě hostitele.
+- Přenos vytváří požadavek do pevných lokálních bufferů místo opakovaného skládání objektů `String`.
+- Současná verze nemá jeden společný deadline pokrývající všechny síťové operace včetně DNS a TCP, neobsahuje OTA, NTP ani lokální historii.
+- Výrazně velké hodnoty `TMEP_SLEEP_SECONDS` nebyly hardwarově otestovány; respektujte omezení konkrétního ESP8266 / RTC spánku.
 
-Ověřené provozní limity:
+## Testování před provozem
 
-- `sht4.begin()` při neúspěchu blokuje běh neomezeně dlouho.
-- Připojování k Wi-Fi probíhá bez časového limitu.
-- Síťová chyba nebo timeout přeruší `loop()` **před** plánovaným spánkem.
-- Není watchdog na úrovni aplikace, fronta měření ani backoff.
-- Konfigurace je zapsaná přímo v kódu.
-- Sketch používá `char host[50]` s neomezeným spojováním řetězců pomocí `strcpy` a `strcat`; při dlouhé `domain` je tu riziko přepsání paměti. Při změně konfigurace omezte délku a ideálně používejte bezpečné formátování s kontrolou výsledku.
+GitHub CI ověřuje **kompilaci** pro NodeMCU ESP8266, nikoliv provozní vlastnosti. Před nasazením na fyzické zařízení je třeba ověřit:
 
-**Doporučené pořadí úprav:** rotace/odstranění zveřejněných údajů → bezpečný síťový přenos → časové limity a spánek při výpadku → kontrola HTTP odpovědi → validace konfigurace a sestavení.
+- Komunikaci I²C a správnost hodnot.
+- Probouzení z deep sleep (GPIO16–RST).
+- Ošetření výpadku Wi-Fi i TMEP.
+- Správné zobrazení a ukládání hodnot v TMEP.
+- Reálnou spotřebu s konkrétním napájením a deskou.
 
-## 6. Rozsah současné dokumentace
-
-Dokumentace neznamená, že řešení prošlo funkčním, bezpečnostním nebo dlouhodobým testem. Repozitář nedokládá konkrétní model desky, způsob napájení, naměřenou spotřebu ani SLA služby TMEP. Všechny změny firmwaru je vhodné ověřovat s fyzickým zařízením.
-
-Pro praktické zapojení viz [Instalace](INSTALACE.md), pro přesný tok programu [Technický popis](TECHNICKY_POPIS.md), při problému [Provoz a řešení problémů](PROVOZ_A_PROBLEMY.md).
+Odkazy: [Instalace](INSTALACE.md), [Technický popis](TECHNICKY_POPIS.md), [Provoz a řešení problémů](PROVOZ_A_PROBLEMY.md).
