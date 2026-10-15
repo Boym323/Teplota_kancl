@@ -1,68 +1,66 @@
 # Technický popis a tok programu
 
-Tento dokument popisuje **aktuální implementaci** v [`Teplota_kancl.ino`](../Teplota_kancl.ino), nikoli zamýšlené budoucí funkce. Firmware je jeden Arduino sketch bez samostatných modulů, externího backendu v repozitáři nebo automatizovaného sestavení.
+Platí pro firmware [`Teplota_kancl.ino`](../Teplota_kancl.ino) ve větvi s optimalizacemi. Sketch používá **ESP8266 Arduino core**, senzor **SHT4x** přes I²C a službu **TMEP.cz** přes nešifrované HTTP.
 
-## Komponenty
+## Architektura
 
 | Vrstva | Komponenta | Úloha |
 | --- | --- | --- |
-| Hardware | ESP8266 | Běh sketch, připojení k Wi-Fi, deep sleep. |
-| Hardware | SHT4x | Teplota a relativní vlhkost přes I²C. |
-| Knihovna | `ESP8266WiFi.h` | Wi-Fi a TCP klient `WiFiClient`. |
-| Knihovna | `Adafruit_SHT4x.h` | Inicializace čidla a `getEvent()`. |
-| Externí služba | TMEP.cz | Příjem hodnot přes HTTP endpoint. |
-| Diagnostika | `Serial` | Sériový výstup s rychlostí 115200. |
+| ESP8266 | Arduino sketch | Spuštění, snímání hodnot, Wi-Fi, deep sleep |
+| SHT4x | Adafruit SHT4x Library | Změření teploty a relativní vlhkosti |
+| Síť | ESP8266WiFi + WiFiClient | TCP spojení a HTTP GET |
+| Cíl | TMEP.cz | Přijímá hodnoty pod nastavenými parametry |
+| Konfigurace | `config.h` / `config.example.h` | Wi-Fi, subdoména TMEP, GUID, spánek |
+| Diagnostika | `Serial` | Výpis měření, chyb a HTTP statusu |
 
-Přenos probíhá směrem **ESP8266 → TMEP.cz**. Sketch nemá serverovou část a neposkytuje API ani webové rozhraní.
+Zařízení neposkytuje webový server, vlastní API, OTA ani lokální historii.
 
-## Sekvence při startu
+## Průběh jednoho cyklu
 
 ```text
-RESET / napájení / probuzení z deep sleep
+RESET / napájení / probuzení
   |
   v
 setup()
   |- Serial.begin(115200)
-  |- sht4.begin()
-  |    \- pokud selže: nekonečné čekání
-  |- výpis sériového čísla senzoru
-  |- sht4.setPrecision(SHT4X_HIGH_PRECISION)
-  |- WiFi.begin(ssid)                 [bez hesla]
-  |    \- čekání bez časového limitu na WL_CONNECTED
-  |- výpis získané IP adresy
-  \- sht4.setHeater(SHT4X_NO_HEATER)
-  |
-  v
-loop()
-  |- sht4.getEvent(&humidity, &temp)
-  |- výpis teploty, vlhkosti a délky čtení
-  |- host = domain + ".tmep.cz"
-  |- client.connect(host, 80)
-  |    \- selhání -> return z loop() bez deep sleep
-  |- sestavení URL s guid=<teplota>&humV=<vlhkost>
-  |- odeslání HTTP GET přes client.print()
-  |- čekání na client.available() > 0
-  |    \- timeout po 5000 ms -> client.stop(); return bez deep sleep
-  \- ESP.deepSleep(sleep * 1000000)
-          |
-          \- nové spuštění zařízení po probuzení
+  |- readSensor()
+  |   |- sht4.begin()
+  |   |- high precision, no heater
+  |   |- getEvent() + kontrola návratové hodnoty
+  |   \- kontrola konečnosti a rozsahu [-40;125] °C, [0;100] % RH
+  |       \- chyba: přeskočit Wi-Fi a HTTP
+  |- connectWifi()
+  |   |- WiFi.persistent(false) a WIFI_STA
+  |   |- WiFi.begin(SSID[, heslo])
+  |   \- max. 15 sekund do WL_CONNECTED
+  |       \- chyba: přeskočit HTTP
+  |- sendReading()
+  |   |- bezpečné vytvoření hostitele a GET zprávy (pevné buffery)
+  |   |- TCP spojení s <subdomain>.tmep.cz:80
+  |   |- kompletní odeslání GET
+  |   |- max. 5 sekund pro první řádek HTTP odpovědi
+  |   \- kontrola stavového kódu 2xx
+  \- sleepUntilNextReading()
+      \- ESP.deepSleep(seconds * 1 000 000)
+            |
+            \- probuzení provede reset, následuje znovu setup()
 ```
 
-Výše uvedený diagram vyjadřuje pořadí a větvení kódu. Vstupní veličiny a časové prodlevy se mohou lišit podle hardwaru a sítě.
+`loop()` je prázdný. Všechny větve programu se po jediném pokusu vrací do hlubokého spánku. To zabraňuje opakovanému zahlcování serveru a zbytečnému aktivnímu běhu při běžných selháních.
 
-## Inicializace senzoru
+## SHT4x
 
-1. `sht4.begin()` – pokus o nalezení senzoru. Při neúspěchu následuje `while (1) delay(1)`.
-2. `sht4.readSerial()` – výpis sériového čísla do diagnostiky; **není odesíláno do TMEP**.
-3. `sht4.setPrecision(SHT4X_HIGH_PRECISION)` – režim vysoké přesnosti.
-4. `sht4.setHeater(SHT4X_NO_HEATER)` – vypnutí ohřevu senzoru.
-5. `sht4.getEvent(&humidity, &temp)` – naplní dvě události s čerstvými daty.
+`sht4.begin()` musí uspět. Program nastaví `SHT4X_HIGH_PRECISION` a `SHT4X_NO_HEATER`. Pak zavolá `getEvent(&humidity, &temperature)`, který podle Adafruit API vrací `bool`. Při selhání čtení nebo neplatných hodnotách se odeslání vynechá.
 
-Hodnoty se v programu čtou z `temp.temperature` a `humidity.relative_humidity`. Sketch nezahrnuje kalibraci, filtrování, kontrolu rozsahu ani zvláštní ošetření chybových hodnot.
+Naměřená teplota musí být v rozsahu **−40 až 125 °C**, relativní vlhkost **0 až 100 % RH**, obě hodnoty musí být konečná čísla. Firmware neprovádí statistické vyhlazování, offset kalibraci ani časové značkování.
 
-## Přenos dat
+## Připojení k Wi-Fi
 
-Hostitel se vytváří spojováním `domain` a přípony `.tmep.cz`. TCP klient komunikuje přes **port 80** bez TLS.
+Konfigurace používá makra z lokálního `config.h` nebo veřejného `config.example.h`. Při neprázdném `WIFI_PASSWORD` se používá `WiFi.begin(ssid, password)`, jinak `WiFi.begin(ssid)`. Funkce `WiFi.persistent(false)` brání opakovaným zápisům Wi-Fi nastavení do flash. Připojení má timeout **15 000 ms** s `delay(250)` ve smyčce.
+
+Tento limit se týká čekání na stav `WL_CONNECTED`. Nevytváří celkovou horní mez pro kompletní HTTP síťový cyklus ani pro DNS.
+
+## Formát HTTP
 
 Tvar požadavku:
 
@@ -73,62 +71,61 @@ Connection: close
 
 ```
 
-Například při doméně `mps`, GUID `temp` a ilustračních měřeních:
+Pro výchozí konfiguraci a *ilustrační* naměřené hodnoty:
 
 ```text
-http://mps.tmep.cz/?temp=23.4&humV=48.1
+http://mps.tmep.cz/?temp=23.50&humV=45.20
 ```
 
-Důležité podrobnosti implementace:
+- `TMEP_TEMPERATURE_GUID` představuje **název** parametru pro teplotu (např. `temp`).
+- `humV` je přímo zapsaný název parametru pro vlhkost.
+- Teplota i vlhkost se formátují na **dvě desetinná místa**.
+- Pro vytvoření hostitele a celé HTTP hlavičky se používá `snprintf` s kontrolou délky; pro float `dtostrf`. Nevznikají pomocné dynamické objekty Arduino `String`.
+- Pro komunikaci slouží `WiFiClient` na **portu 80**, nikoliv TLS.
+- Po odeslání se načítá pouze první řádek odpovědi; kontroluje se tvar `HTTP/1.x` a tříciferný status. **2xx** je vyhodnoceno jako úspěšná HTTP odpověď.
+- Ověření celého těla odpovědi ani potvrzení uložení historie na straně TMEP není implementováno.
+- Délka první HTTP řádky je omezená fixním bufferem; příliš dlouhá odpověď je chyba.
 
-- `guid` je v URL použit jako **název** parametru teploty, nikoli jako samostatný parametr `guid=...`.
-- `humV` je pevný název parametru relativní vlhkosti.
-- Čísla jsou převáděna do řetězce pomocí operátorů Arduino `String`; není zde explicitní řízení počtu desetinných míst, zaokrouhlování ani URL encoding.
-- `client.connect(host, 80)` pouze zjišťuje možnost navázání spojení.
-- `client.print(...)` odešle HTTP hlavičky a URL, **neověří však výsledek na aplikační vrstvě**.
-- `client.available() > 0` znamená, že jsou dostupná data ze spojení, **ne** že server odpověděl `200 OK` nebo zapsal údaje.
-- HTTP odpověď se vůbec nečte ani neparsuje. Kód explicitně nevolá `client.stop()` na úspěšné větvi, následně požádá o hluboký spánek.
+## Deep sleep a časování
 
-## Časování a deep sleep
+Konstanta `TMEP_SLEEP_SECONDS` má v ukázkové konfiguraci hodnotu **60UL**. Při úspěchu i chybě proběhne:
 
-Aktuální konstanta `sleep` má hodnotu `60` a používá se jako `ESP.deepSleep(sleep*1000000)`, tedy **60 000 000 µs = 60 s**.
+```cpp
+ESP.deepSleep(static_cast<uint64_t>(TMEP_SLEEP_SECONDS) * 1000000ULL);
+```
 
-V přirozeném úspěšném cyklu platí zhruba:
+64bitové násobení odstraňuje přetečení při běžném násobení 32bitového časového intervalu, samo o sobě ale neověřuje hardwarový limit maximální délky deep sleep na daném ESP8266. Pro probuzení je typicky nutné propojení GPIO16–RST.
+
+Po každém resetu začíná nové měření. Čas mezi měřeními je:
 
 ```text
-start + inicializace + Wi-Fi + měření + přenos + 60 s spánku
+doba startu + čtení senzoru + připojování k Wi-Fi + HTTP komunikace + spánek
 ```
 
-**Nejde o periodický časovač přesně po 60 s.** Wi-Fi může přidat proměnlivou prodlevu. Každé probuzení z deep sleep znamená nový start programu. Pro automatické probuzení je na ESP8266 typicky potřeba propojení **GPIO16–RST**.
+Nejde o přesný periodický scheduler.
 
-### Chování při chybách
+## Chybové scénáře
 
-| Stav | Skutečné chování |
+| Stav | Chování |
 | --- | --- |
-| SHT4x není detekován | Nekonečná smyčka v `setup()`. |
-| Wi-Fi není dosažitelná | Nekonečné čekání v `setup()` po 500ms intervalech. |
-| TCP spojení selže | `loop()` končí pomocí `return`, **bez** deep sleep. |
-| Server nevrátí data do 5 s | `client.stop()`, `return` z `loop()`, **bez** deep sleep. |
-| Ze serveru dorazí libovolná data | Následuje deep sleep, i když HTTP status neznáme. |
+| Senzor nedetekován / čtení selhalo | Nevysílá data, přejde do deep sleep. |
+| Neplatná teplota nebo vlhkost | Nevysílá data, přejde do deep sleep. |
+| Wi-Fi není připojená do 15 s | Nevysílá data, přejde do deep sleep. |
+| DNS / TCP spojení selže | Loguje chybu a přejde do deep sleep. |
+| HTTP požadavek není celý odeslán | Loguje chybu a přejde do deep sleep. |
+| Nedojde kompletní stavový řádek do 5 s | Loguje chybu a přejde do deep sleep. |
+| HTTP status 3xx / 4xx / 5xx | Loguje HTTP status a přejde do deep sleep. |
+| HTTP status 2xx | Zaznamená úspěch HTTP a přejde do deep sleep. |
 
-Proto může výpadek vzdálené služby vést k mnoha rychlým opakovaným připojením a vyšší spotřebě. Aktuální firmware neobsahuje exponenciální backoff ani vytrvalou frontu neodeslaných měření.
+## Co firmware zatím neumí
 
-## Paměť, síť a hranice řešení
+- Neprovádí okamžité opakované pokusy ani exponenciální backoff.
+- Nemá lokální zásobník neodeslaných měření.
+- Neumí HTTPS/TLS, OTA, konfiguraci přes web ani NTP.
+- Nepotvrzuje aplikací TMEP uložené hodnoty.
+- Přenos přes HTTP zůstává čitelný pro prostředníky na síti.
+- Limit délky DNS/TCP připojení nelze zaměňovat s jedním celkovým hard deadlinem.
 
-- Každý cyklus vytváří místní `WiFiClient` a sestavuje cestu pomocí `String`.
-- Mezi jednotlivými starty po deep sleep se nepřenáší aplikační stav.
-- Zařízení si neukládá historii lokálně a při ztrátě spojení se měření **nezařadí k pozdějšímu odeslání**.
-- Nejsou implementovány watchdog / retry strategie na aplikační úrovni (mimo běžné chování knihoven), MQTT, OTA, webová správa nebo lokální API.
-- Kód používá `char host[50]` a funkce `strcpy/strcat`; při nevhodně dlouhé hodnotě `domain` by mohlo dojít k překročení pole. Současná krátká hodnota tuto situaci sama o sobě nevyvolává, ale budoucí změny musí ověřit délku.
-- `sleep*1000000` není obaleno kontrolou rozsahu; u výrazně delších intervalů je potřeba zohlednit limity datových typů a `ESP.deepSleepMax()`.
+## Automatické ověření
 
-## Případné rozšíření (není implementováno)
-
-- Konečný timeout připojování k Wi-Fi.
-- Odstupňované opakování odesílání a spánek i při chybě.
-- Parsování HTTP statusu a bezpečné ošetření odpovědi.
-- Oddělená neveřejná konfigurace a práce s tajemstvími.
-- Validace měření, laditelné časování, úspora energie.
-- Automatické sestavení a test kompatibility Arduino core / knihoven.
-
-Žádný z těchto návrhů není třeba zaměňovat za vlastnost současného firmware.
+[Workflow Arduino CLI](../.github/workflows/firmware-compile.yml) kompiluje pro `esp8266:esp8266:nodemcuv2`. Bez fyzického senzoru a Wi-Fi to **neověřuje spotřebu, probouzení, správnost I²C ani komunikaci s TMEP**.
