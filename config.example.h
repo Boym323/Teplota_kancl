@@ -1,7 +1,7 @@
 #pragma once
 
 // Default settings retained from the original sketch for compatibility.
-// Copy this file to config.h and edit there before deploying. config.h is ignored by Git.
+// Copy this file to Teplota_kancl_local.h and edit there before deploying. Teplota_kancl_local.h is ignored by Git.
 #define WIFI_SSID "NewSWSfree"
 #define WIFI_PASSWORD ""  // Empty string = open Wi-Fi; never commit real passwords.
 
