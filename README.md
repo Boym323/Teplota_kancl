@@ -40,16 +40,16 @@ Nepřipojujte 5V I²C signály přímo na GPIO ESP8266.
 2. Přidejte URL správce desek ESP8266:
    `https://arduino.esp8266.com/stable/package_esp8266com_index.json`
 3. Nainstalujte balíček **esp8266 by ESP8266 Community** a knihovnu **Adafruit SHT4x Library** včetně požadovaných závislostí.
-4. Zkopírujte [`config.example.h`](config.example.h) do **`config.h`** ve složce projektu. Upravený `config.h` je v [`.gitignore`](.gitignore), aby nedocházelo k náhodnému zveřejnění hesla.
-5. Upravte SSID, volitelné heslo Wi-Fi a parametry TMEP v `config.h`.
+4. Zkopírujte [`config.example.h`](config.example.h) do **`Teplota_kancl_local.h`** ve složce projektu. Upravený `Teplota_kancl_local.h` je v [`.gitignore`](.gitignore), aby nedocházelo k náhodnému zveřejnění hesla.
+5. Upravte SSID, volitelné heslo Wi-Fi a parametry TMEP v `Teplota_kancl_local.h`.
 6. Otevřete `Teplota_kancl.ino`, zvolte odpovídající desku a port a klikněte na **Upload**.
 7. Otevřete **Serial Monitor** na 115 200 baudů a ověřte výsledky na TMEP i další probuzení po spánku.
 
-**Zpětná kompatibilita:** Bez lokálního `config.h` firmware použije výchozí hodnoty v `config.example.h`, které odpovídají původní veřejné konfiguraci repozitáře. Před nasazením doporučujeme vytvořit vlastní `config.h`.
+**Zpětná kompatibilita:** Bez lokálního `Teplota_kancl_local.h` firmware použije výchozí hodnoty v `config.example.h`, které odpovídají původní veřejné konfiguraci repozitáře. Před nasazením doporučujeme vytvořit vlastní `Teplota_kancl_local.h`.
 
 ### Konfigurace
 
-| Makro v `config.h` | Účel | Výchozí hodnota |
+| Makro v `Teplota_kancl_local.h` | Účel | Výchozí hodnota |
 | --- | --- | --- |
 | `WIFI_SSID` | Název Wi-Fi | Původní veřejná síť projektu |
 | `WIFI_PASSWORD` | Wi-Fi heslo; prázdný řetězec pro otevřenou síť | Prázdný řetězec |
