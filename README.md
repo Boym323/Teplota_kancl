@@ -1,0 +1,1 @@
+# Teplota_kancl
