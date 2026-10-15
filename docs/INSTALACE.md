@@ -55,10 +55,10 @@ První poskytuje ESP8266 Arduino core, druhou externí Adafruit knihovna. Projek
 
 ## 4. Nastavení Wi-Fi a TMEP
 
-Firmware čte nastavení z **`config.h`**, pokud v adresáři sketch existuje. Jinak použije [`config.example.h`](../config.example.h) s původními veřejnými výchozími hodnotami. Tím je zachována kompatibilita, ale doporučujeme vytvořit lokální nastavení vždy před nasazením.
+Firmware čte nastavení z **`Teplota_kancl_local.h`**, pokud v adresáři sketch existuje. Jinak použije [`config.example.h`](../config.example.h) s původními veřejnými výchozími hodnotami. Tím je zachována kompatibilita, ale doporučujeme vytvořit lokální nastavení vždy před nasazením.
 
-1. Zkopírujte `config.example.h` na `config.h` ve stejné složce jako `Teplota_kancl.ino`.
-2. V souboru `config.h` upravte:
+1. Zkopírujte `config.example.h` na `Teplota_kancl_local.h` ve stejné složce jako `Teplota_kancl.ino`.
+2. V souboru `Teplota_kancl_local.h` upravte:
 
 ```cpp
 #define WIFI_SSID "NAZEV_SITE"
@@ -68,8 +68,8 @@ Firmware čte nastavení z **`config.h`**, pokud v adresáři sketch existuje. J
 #define TMEP_SLEEP_SECONDS 60UL
 ```
 
-3. `config.h` je v `.gitignore`: v běžné práci nebude omylem přidán do nového commitu. **Před každým zveřejněním změn přesto ověřte, že neobsahují hesla.**
-4. Pokud si v původní verzi upravujete síť přímo v `.ino`, přeneste tyto hodnoty do `config.h`. Od této verze se přímé staré proměnné `ssid` / `domain` / `guid` / `sleep` nepoužívají.
+3. `Teplota_kancl_local.h` je v `.gitignore`: v běžné práci nebude omylem přidán do nového commitu. **Před každým zveřejněním změn přesto ověřte, že neobsahují hesla.**
+4. Pokud si v původní verzi upravujete síť přímo v `.ino`, přeneste tyto hodnoty do `Teplota_kancl_local.h`. Od této verze se přímé staré proměnné `ssid` / `domain` / `guid` / `sleep` nepoužívají.
 
 Makra znamenají: `WIFI_SSID` název Wi-Fi; `WIFI_PASSWORD` heslo (prázdné = otevřená síť); `TMEP_DOMAIN` subdoména bez `.tmep.cz`; `TMEP_TEMPERATURE_GUID` parametr teploty; `TMEP_SLEEP_SECONDS` dobu spánku v sekundách **po** každém pokusu o měření a odeslání. Po změně nastavení je nutné firmware znovu nahrát.
 
